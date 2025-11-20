@@ -1,5 +1,5 @@
 
-# 
+# OPT Project 1, UPV
 ---
 # Problem background:
 We are given a 2-dimensional grid $G$, which is formed by cells of various geometry. Each cell at the beginning can (doesn't have to) contain colony of each species out of $4$ species $A, M, E, O$. So one cell can have for example colonies $E$ and $O$, and another can have none.
