@@ -1,7 +1,7 @@
 
-# Definition
+# 
 ---
-## Problem background:
+# Problem background:
 We are given a 2-dimensional grid $G$, which is formed by cells of various geometry. Each cell at the beginning can (doesn't have to) contain colony of each species out of $4$ species $A, M, E, O$. So one cell can have for example colonies $E$ and $O$, and another can have none.
 Data of each grid cell:
 ```
@@ -20,21 +20,21 @@ Data of each grid cell:
 ```
 Species presence in each cell is defined by Boolean values `has_<species>`.
 Each cell has a geometry parameter. Originally each cell can be a square, with estimated field of $\approx 0.5625km^2$. Due to the land variation and for example water present the polygon and ultimately field of land can be smaller than that, but not bigger. It is approximately 56.25 Hectares or 139 Acres.
-## Problem goal
+# Problem goal
 The goal is the conservation of biodiversity. 
 To pursue the goal we have to:
 - Expand their territories (more successful survival of each colony).
 - Connect their territories (for each species individually) with corridors (prevents gene drift).
 - Make sure territories do not connect by expanded land (kills variety).
 - Minimize cost. (Can be done through constraints)
-## Rules of territory expansion
+# Rules of territory expansion
 - Each cell has a different expanding cost for each species.
 - **CHANGE, MAKE IT EXPAND LIKE A CIRCLE:** Each newly expanded cell for species $s$ must be adjacent to at least one cell that is either an original colony cell of $s$ or an expanded cell of $s$. Cells connected horizontally or vertically are considered adjacent. Diagonal cells are not adjacent.
 - Two territories must not get connected through territory expansion and form one bigger territory. It is forbidden, because it kills species variety.
 - We must not expand the territory of species $M$ in a way, that it would intersect with both original and expanded territories of species $E$ and $O$, because $M$ is their natural predator. On the other hand $A$, $E$, $O$ can all intersect their territories.
 - We should consider different geometry and normalize the price and conservation biodiversity accordingly to the area being expanded. Smaller area = less conservation and different cost/area ratio.
 - It is not obligatory, to expand every territory, unless constraints definitely require it.
-## Rules of corridors
+# Rules of corridors
 - Corridor is a property of a cell.
 - Can overlap with territory.
 - Corridor cost can be different for each cell.
@@ -60,13 +60,13 @@ To pursue the goal we have to:
 - Geometries are not adjacent if they share only a vertex.
 - Corridors have to connect two territories directly even if going through different species territory. There is no indirect connections through different species territories.
 
-## Linear programming part
-### Goal
+# Linear programming part
+## Goal
 - Maximize conservation of biodiversity
 - Minimize cost (can be handled as a fixed constraint)
-### Constraints
-#### Territory size
-##### Data
+## Constraints
+### Territory size
+#### Data
 - Martes Martes
 	- min: 1km2
 	- mean: 10km2
@@ -83,12 +83,12 @@ To pursue the goal we have to:
 	- min:0.2km2  
 	- mean: 1.5km2, 
 	- max: 3km2
-##### The constraint
+#### The constraint
 - The model HAS to create minimum space for each species.
 - The model is going to encourage mean space for each species. (for example coefficient = 1)
 - The model is going to encourage, but less for bigger space. (for example coefficient = 0.8)
 - The model is going to discourage for much bigger space. (for example coefficient = 0.2)
-#### Territory availability
+### Territory availability
 - land that is too dangerous and which type is completely unsuitable for certain species is NOT going to be allowed for expansion
 - land of very good / good enough land is going to be distinguished by different coefficients.
 # Additional Data Sources
@@ -119,11 +119,3 @@ https://www.nature.com/articles/6885110
 ---
 - Intersections of corridors, lands - cost is up to us, whether to spend $X\cdot\text{Species passing}$ depending on the number of species passing through the field or just $X$. $X$ being the cost of the corridor in the specified field.
 - Predator $\text{Martes Martes}$ should not be intersecting their corridors or lands with potential pray, which are $\text{Dormice}$ and $\text{Rabbits}$.
-
-```
-if each colony.size = colony.desiredSize
-then bioConservation.territories = true
-
-if each colony.isConnected
-then bioConservation.corridors = true
-```
