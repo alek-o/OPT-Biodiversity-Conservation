@@ -1,0 +1,43 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.pdfsync
+*.dvi
+*.ps
+*.lof
+*.lot
+*.bcf
+*.run.xml
+*.idx
+*.ind
+*.ilg
+*.out.ps
+*.out.log
+*.out.aux
+*.out.bbl
+*.out.blg
+*.out.toc
+*.out.lot
+*.out.lof
+*.out.fls
+*.out.fdb_latexmk
+*.out.pdfsync
+*.out.synctex.gz
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Editor-specific files
+.idea/
+.vscode/
+*.tmp

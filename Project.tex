@@ -1,0 +1,957 @@
+\documentclass{article}
+\usepackage{amsmath} % Required for math environments
+\usepackage{amssymb} % Provides \mathbb and additional math symbols
+
+\begin{document}
+%=====================================================================
+% Sets
+%=====================================================================
+
+\subsection*{Sets}
+
+\begin{itemize}
+    \item $I$ : set of grid cells, indexed by $i$.
+    \item $S = \{A, M, E, O\}$ : set of species.
+    \item $\mathrm{Adj} \subseteq I \times I$ : adjacency relation; 
+          $(i,j) \in \mathrm{Adj}$ if and only if cells $i$ and $j$ 
+          share a side (4-neighborhood).
+    \item $K_s$ : set of original colonies (territories) of species $s$.
+          Each $k \in K_s$ represents one connected component 
+          of originally occupied cells.
+\end{itemize}
+
+
+%=====================================================================
+% Parameters
+%=====================================================================
+
+\subsection*{Parameters}
+
+\begin{itemize}
+    \item $area_i \in \mathbb{R}_{+}$ : area of cell $i$. $area_i\geq 0.56$ is maximum.
+    \item $orig\_has_{i,s} \in \{0,1\}$ : 1 if species $s$ originally occurs in cell $i$.
+
+    \item $cost^{T}_{i,s} \in \mathbb{R}_{+}$ : adaptation (territory expansion) cost 
+          for species $s$ to occupy cell $i$.
+    \item $cost^{C}_{i} \in \mathbb{R}_{+}$ : corridor creation cost in cell $i$.
+
+    \item $minArea_s \in \mathbb{R}_{+}$ : minimum viable total territory area for species $s$.
+    \item $meanArea_s \in \mathbb{R}_{+}$ : “satisfactory” target area for species $s$.
+    \item $maxArea_s \in \mathbb{R}_{+}$ : maximum allowed territory area for species $s$.
+
+    % Colony-level area requirements:
+    \item $minArea_{k,s} \in \mathbb{R}_{+}$ : minimum required area for colony $k \in K_s$.
+    \item $meanArea_{k,s} \in \mathbb{R}_{+}$ : satisfactory target area for colony $k \in K_s$.
+    \item $maxArea_{k,s} \in \mathbb{R}_{+}$ : maximum allowed area for colony $k \in K_s$.
+
+    \item $conflict(s,s') \in \{0,1\}$ : equals $1$ if species $s$ and $s'$ 
+          cannot overlap (e.g.\ $M$ with $E$ or $O$), otherwise $0$.
+    \item $suit_{i,s} \in [0,1]$ : suitability score of cell $i$ for species $s$ (1 = ideal habitat, 0 = unsuitable).
+    \item $priority_s \in \mathbb{R}_{+}$ : priority coefficient of species $s$ (higher means greater conservation priority).
+\end{itemize}
+
+
+%=====================================================================
+% Decision Variables
+%=====================================================================
+
+\subsection*{Decision Variables}
+
+\begin{itemize}
+
+    % TERRITORY
+    \item $T_{i,s} \in \{0,1\}$ : 
+          1 if cell $i$ belongs to the \emph{final} territory of species $s$ 
+          (original or expanded), 0 otherwise.
+
+    \item $E_{i,s} \in \{0,1\}$ : 
+          1 if species $s$ newly expands into cell $i$ 
+          (i.e.\ $i$ was not originally occupied), 0 otherwise.
+
+    % CORRIDOR
+    \item $C_i \in \{0,1\}$ : 
+          1 if a corridor is built in cell $i$, 0 otherwise.
+
+    \item $use_{i,s} \in \{0,1\}$ :
+          1 if species $s$ is permitted to use the corridor in cell $i$, 
+          0 otherwise.
+
+    % CONNECTIVITY LINKING VARIABLES
+    \item $\lambda_{(i,j),s} \in \{0,1\}$ :
+          1 if species $s$ uses adjacency $(i,j) \in \mathrm{Adj}$ as a 
+          corridor connection between two territories.
+\end{itemize}
+
+
+%=====================================================================
+% Auxiliary Variables (derived, structural)
+%=====================================================================
+
+\subsection*{Auxiliary Variables}
+
+\begin{itemize}
+    \item $Area_{s} = \sum_{i \in I} area_i \, T_{i,s}$ :
+          total final area of species $s$.
+
+    \item $ExpArea_s = \sum_{i \in I} area_i \, E_{i,s}$ :
+          total expanded area for species $s$.
+
+    \item $Area_{k,s} = \sum_{i \in I} area_i \, T_{i,s,k}$ :
+          area of colony $k$ of species $s$, where
+          $T_{i,s,k}$ indicates membership of $i$ in colony $k$ 
+          (colony-assignment variables introduced in the model section).
+
+    \item $y_s = \sum_{(i,j)\in \mathrm{Adj}} \lambda_{(i,j),s}$ :
+          number of corridor links used for species $s$.
+
+    \item $n_s = |K_s|$ :
+          number of original colonies of species $s$.
+
+\end{itemize}
+
+
+%=====================================================================
+% Stage-related quantities
+%=====================================================================
+
+\subsection*{Stage-Related Quantities}
+
+\begin{itemize}
+    \item $\text{MinFeasible}_s = minArea_s$ : 
+          minimum feasible area requirement for species $s$ (Stage~1).
+
+    \item $\text{MeanTarget}_s = meanArea_s - minArea_s$ : 
+          area above minimum toward satisfactory target (Stage~2).
+
+    \item $\text{MaxPotential}_s = maxArea_s - minArea_s$ :
+          maximum possible expansion above minimum (Stage~3).
+
+    \item $ConnTarget_s = n_s - 1$ :
+          maximum number of meaningful inter-colony connections for species $s$ 
+          (tree structure).
+
+\end{itemize}
+
+\section{Objective function}
+
+\subsection{Stage 1: Minimum viable territory}
+
+% ============================
+% Stage 1: Min-cost to satisfy minimal territory
+% ============================
+
+% Objective: minimize total expansion + corridor cost
+% -------------------------
+% Precomputed ratio parameter
+% -------------------------
+\subsection*{Precomputed parameter}
+\begin{itemize}
+  \item \(\rho_{i,s} := \dfrac{area_i}{cost^{T}_{i,s}}\) (precompute for each cell and species; assume \(cost^{T}_{i,s}>0\)). 
+        \textit{This is a constant parameter used to linearize area-per-cost preference.}
+\end{itemize}
+
+% -------------------------
+% Stage 1: Objective (LaTeX)
+% -------------------------
+\subsection*{Stage 1 objective (minimal territory expansion, no priority)}
+
+Stage~1 requires that each species attains its minimal territory.  
+To achieve the required minima with best cost-effectiveness and habitat quality, we maximize the sum of per-cell benefit coefficients for newly expanded cells:
+
+\[
+\begin{aligned}
+\text{(Stage 1)}\quad &\max \; 
+    Z^{(1)} \;=\; \sum_{s \in S} \sum_{i \in I} \; 
+      \underbrace{suit_{i,s}}_{\text{suitability}} \;
+      \underbrace{\rho_{i,s}}_{\!\dfrac{area_i}{cost^{T}_{i,s}}\!} \;
+      E_{i,s}
+\end{aligned}
+\]
+
+subject to Stage~1 feasibility constraints, e.g.:
+
+\[
+\begin{aligned}
+& \text{(a) Minimal area per species:} \\
+& \sum_{i\in I} area_i \; E_{i,s} \; \ge \; Rmean_s
+      \quad \forall s \in S, \\[4pt]
+& \text{(b) Expansion feasibility (adjacency \& connectivity):} \\
+& \text{(constraints ensuring each expanded cell is adjacent / reachable to its original patch)} \\[4pt]
+& \text{(c) No-merge and conflict rules:} \\
+& \text{(constraints preventing merges between original patches of same species and forbidding} \\
+& \text{expansion that violates conflicts)} \\[4pt]
+& \text{(d) Binary domains:} \\
+& E_{i,s} \in \{0,1\},\; T_{i,s} \in \{0,1\},\; C_i \in \{0,1\},\; \ldots
+\end{aligned}
+\]
+
+\[
+\text{(Note)}\quad \rho_{i,s} \text{ and } suit_{i,s} \text{ are model parameters; the objective is linear in } E_{i,s}.
+\]
+
+\subsubsection{Constraints for Stage 1}
+
+
+
+
+\subsection{Stage 2 objective (satisfactory territory expansion with proportional corridor creation)}
+
+% -------------------------
+% Stage 2: Objective & auxiliary definitions
+% -------------------------
+\subsection*{Stage 2 objective (balanced territory \& corridors)}
+
+% --- Auxiliary splits and deviation variables ---
+\paragraph{Auxiliary definitions (per species $s$).}
+\[
+\begin{aligned}
+& A_s \;=\; \sum_{i\in I} area_i \, T_{i,s} 
+        \quad\text{(total final area of species } s\text{),}\\[4pt]
+& A_{1,s} + A_{2,s} \;=\; A_s, 
+        \quad 0 \le A_{1,s} \le n_s \cdot meanArea_s, \quad A_{2,s} \ge 0,\\[4pt]
+& TB_s \;\le\; A_{1,s} - m_s, \qquad TB_s \ge 0, \qquad TB_s \le Rmean_s
+        \quad\text{(territory between-min-and-mean)},\\[4pt]
+& \text{choose } Y_s \text{ as either: }
+    \begin{cases}
+      \displaystyle Y_{cells,s} \;=\; \sum_{i\in I} use_{i,s}
+              &\text{(corridor cells assigned to species } s),\\[6pt]
+      \displaystyle Y_{edges,s} \;=\; \sum_{(i,j)\in \mathrm{Adj}} \lambda_{(i,j),s}
+              &\text{(corridor edges used by species } s).\\
+    \end{cases}
+\end{aligned}
+\]
+
+\paragraph{Soft proportional constraint (per species $s$).}
+(If $n_s \le 1$ or $Rmean_s\le 0$, omit this constraint for that $s$ and set deviations to zero.)
+
+\[
+Y_s \cdot Rmean_s \;-\; TB_s \cdot (n_s - 1) \;=\; dev_{s}^{+} \;-\; dev_{s}^{-},
+\qquad dev_{s}^{+},dev_{s}^{-} \ge 0.
+\]
+
+\paragraph{Connectivity certificate variables (recall / definitions).}
+\[
+ConnectedCount_s \;=\; \sum_{k\in K_s} conn_{s,k},
+\]
+where \(conn_{s,k}\in\{0,1\}\) indicates colony \(k\) of species \(s\) is certified connected
+(via corridor flow constraints introduced in the model).
+
+\paragraph{Connectivity reward scaling parameter. (An example choice.)}
+\[
+\gamma_{conn}=\frac{n_{s}\cdot meanArea_{s}-minArea_{s}}{n_{s}-1}
+\]
+
+% --- Stage 2 objective ---
+\paragraph{Stage 2 objective (maximize).}
+\[
+\begin{aligned}
+\text{(Stage 2)}\quad & \max \; Z^{(2)} \;=\;
+  \underbrace{\sum_{s\in S} \Big( A_{1,s} \;+\; 0.7 \, A_{2,s} \Big)}_{\text{territory range-reward}}
+  \;+\; \underbrace{\gamma_{\mathrm{conn}} \sum_{s\in S} ConnectedCount_s}_{\text{connectivity reward}} \\
+&\qquad\qquad\qquad
+  - \; \underbrace{\gamma_{\mathrm{cost}} \Big( \sum_{s\in S}\sum_{i\in I} cost^T_{i,s}\, E_{i,s}
+         \;+\; \sum_{i\in I} cost^C_{i}\, C_i \Big)}_{\text{adaptation \& corridor costs}} \\
+&\qquad\qquad\qquad
+  - \; \underbrace{\gamma_{\mathrm{edge}} \sum_{(i,j)\in\mathrm{Adj}} \sum_{s\in S} \lambda_{(i,j),s}}_{\text{edge penalty (favor tree-like)}}\\
+&\qquad\qquad\qquad
+  - \; \underbrace{\gamma_{\mathrm{prop}} \sum_{s\in S} \big( dev_{s}^{+} + dev_{s}^{-} \big)}_{\text{penalize proportion deviation}}.
+\end{aligned}
+\]
+
+% -------------------------
+% Implementation / practical notes
+% -------------------------
+\subsection*{Implementation notes and recommended parameter choices}
+
+\begin{itemize}
+  \item \textbf{Choice of \(Y_s\):} for true tree semantics select \(Y_s := Y_{edges,s}\). If corridor costs and practical construction are cell-based, the simpler option is \(Y_s := Y_{cells,s}\). Use edges for proportionality to \(n_s-1\).
+  \item \(\gamma_{\mathrm{conn}}\) should reflect how valuable connecting one colony is relative to adding area. As a baseline, set \(\gamma_{\mathrm{conn}} \approx\) average per-patch area-equivalent (e.g. mean cell-area).
+  \item \(\gamma_{\mathrm{cost}}\) scales monetary costs into the same units as territory reward. If costs are already monetary and territory reward is in area units, normalize by converting one to the other or choose \(\gamma_{\mathrm{cost}}\) to produce desired trade-offs.
+  \item \(\gamma_{\mathrm{edge}}\) should be small (e.g. 0.01–0.1 in normalized units) to prefer trees but not overrule connectivity gains.
+  \item \(\gamma_{\mathrm{prop}}\) controls how tightly the proportion is enforced: large values \(\Rightarrow\) near-equality, small values \(\Rightarrow\) loose. Start with a moderate value and tune.
+  \item For species with \(n_s\le 1\) or \(Rmean_s\le 0\), set \(dev_{s}^{\pm}=0\) (no proportional constraint) and either fix \(Y_s=0\) (no corridors) or treat corridor reward as zero for that species.
+  \item Maintain Stage~1 hard constraints (minimal territory) when solving Stage~2 (do not relax them).
+\end{itemize}
+
+% -------------------------
+% Stage 3: Objective (fill up to max if budget remains)
+% -------------------------
+\subsection*{Stage 3 objective (top-up expansion to maxima)}
+
+\paragraph{Auxiliary parameters (for Stage 3).}
+\begin{itemize}
+  \item $Budget_{\mathrm{rem}} \in \mathbb{R}_{+}$ : remaining monetary budget available for Stage~3 expansions.
+  \item $\displaystyle Rmax_s \;:=\; n_s \, k_s \;-\; m_s$ : maximum remaining area (in cell-units or area-units) for species $s$ above the minimum.
+  \item (Optional) $\; \delta \in (0,1]$ : diminishing-return coefficient for expansion beyond the "mean" level (use $\delta<1$ to downweight overly large expansions). If not used, set $\delta=1$.
+\end{itemize}
+
+\paragraph{Stage 3 objective (maximize additional expansion benefit).}
+\[
+\begin{aligned}
+\text{(Stage 3)}\quad &\max \; Z^{(3)} \;=\;
+    \sum_{s\in S}\; \sum_{i\in I} 
+      \underbrace{suit_{i,s}}_{\text{suitability}}
+      \underbrace{\rho_{i,s}}_{\,\dfrac{area_i}{cost^T_{i,s}}\,} \;
+      E_{i,s}^{(3)}
+\end{aligned}
+\]
+where $E_{i,s}^{(3)}$ are the Stage~3 decision binaries that equal 1 if cell $i$ is chosen for additional expansion for species $s$ during Stage~3 (cells already committed in Stages~1–2 should be fixed and excluded from $E_{i,s}^{(3)}$).
+
+\paragraph{Subject to (core) Stage 3 constraints.}
+\[
+\begin{aligned}
+&\text{(a) Per-species maximum cap:} \\
+& \sum_{i\in I} area_i \; E_{i,s}^{(3)} \; \le \; Rmax_s
+    \quad \forall s\in S, [6pt]\\
+&\text{(b) Budget constraint:} \\
+& \sum_{s\in S}\sum_{i\in I} cost^T_{i,s}\; E_{i,s}^{(3)} \;+\;
+  \sum_{i\in I} cost^C_{i}\; C_i^{(3)} \; \le \; Budget_{\mathrm{rem}}, \\[6pt]
+&\text{(c) Feasibility (adjacency / no-merge / conflict / corridor rules):}\\
+&\text{(Stage-3 expansions must obey the same adjacency, connectivity and conflict constraints)} \\[6pt]
+&\text{(d) Binary domain:} \\
+&E_{i,s}^{(3)} \in \{0,1\}, \; C_i^{(3)} \in \{0,1\}, \; \dots
+\end{aligned}
+\]
+
+\paragraph{Optional: diminish returns beyond mean.}
+If you wish to reduce marginal benefit for expansions beyond the satisfactory (mean) level, split each species' additional expansion into two parts:
+\[
+\begin{aligned}
+& A_{1,s}^{(\mathrm{tot})} \;=\; \sum_{i\in I} area_i \, T_{i,s} \quad\text{(current total after Stages 1–2)}\\[4pt]
+& \text{Let } Exceed_{s} \;=\; \max\{0,\; A_{1,s}^{(\mathrm{tot})} - n_s\cdot meanArea_s \}
+\end{aligned}
+\]
+and then weight expansions beyond the mean by $\delta$ in the objective:
+
+\[
+Z^{(3)} \;=\; \sum_{s}\sum_{i} suit_{i,s}\,\rho_{i,s}\, E_{i,s}^{(3, \, \le mean)} \;+\; 
+           \delta \sum_{s}\sum_{i} suit_{i,s}\,\rho_{i,s}\, E_{i,s}^{(3, \, > mean)}
+\]
+
+(Implementation note: implement the split $E^{(3,\le mean)}$ and $E^{(3,> mean)}$ by comparing cumulative area to $n_s\cdot meanArea_s$ using standard linearization tricks.)
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item In a sequential workflow, variables/decisions already fixed by Stage~1 and Stage~2 should be fixed (constants) during Stage~3; the Stage~3 binary $E_{i,s}^{(3)}$ should only be available for cells not already selected.
+  \item If corridor additions are permitted in Stage~3, include $C_i^{(3)}$ and associated corridor feasibility constraints. Often corridors are set in Stage~2 and not expanded further — adapt per your workflow.
+  \item The objective uses $\rho_{i,s}=area_i/cost^T_{i,s}$ to prefer cells giving most area per monetary unit, adjusted by suitability.
+  \item If you prefer to prioritize particular species in Stage~3, include a multiplicative weight $w_s$ (priority) inside the summand.
+\end{itemize}
+
+\section{Constraints}
+
+% -------------------------
+% 1. General feasibility & geometry constraints
+% -------------------------
+\section*{Constraints — General feasibility \& geometry}
+
+\paragraph{Notation reminder (used below).}
+We keep the naming conventions introduced earlier:
+\[
+\begin{aligned}
+& I,\; S,\; \mathrm{Adj},\; K_s,\\
+& T_{i,s}\in\{0,1\}, \; E_{i,s}\in\{0,1\}, \; C_i\in\{0,1\}, \; use_{i,s}\in\{0,1\},\\
+& area_i,\; cost^T_{i,s},\; cost^C_i,\; suit_{i,s}\in[0,1],\\
+& n_s,\; m_s,\; \ell_s,\; k_s,\; Rmean_s := n_s\ell_s - m_s,\\
+& \rho_{i,s} := \dfrac{area_i}{cost^T_{i,s}} \text{ (precomputed)},\\
+& conflict(s,s')\in\{0,1\} \text{ indicates pairwise conflict.}
+\end{aligned}
+\]
+
+\subsection*{1.1 Variable domains and basic identities}
+
+\begin{align}
+& T_{i,s} \in \{0,1\}, \qquad E_{i,s} \in \{0,1\}, \qquad C_i \in \{0,1\}, \qquad use_{i,s} \in \{0,1\},\\[4pt]
+& \lambda_{(i,j),s} \in \{0,1\} \quad \forall (i,j)\in\mathrm{Adj},\; s\in S
+\qquad\text{(corridor-edge usage binaries, optional)}.
+\end{align}
+
+\noindent Basic preservation of original presence:
+\begin{align}
+& T_{i,s} \;\ge\; orig\_has_{i,s}
+\qquad\forall i\in I,\; s\in S. 
+\label{eq:preserve_orig}
+\end{align}
+
+\noindent Link expanded-only to final membership:
+\begin{align}
+& E_{i,s} \;\ge\; T_{i,s} - orig\_has_{i,s}
+\qquad\forall i,s,
+\label{eq:E_lower}\\
+& E_{i,s} \;\le\; T_{i,s}, \qquad E_{i,s} \;\le\; 1 - orig\_has_{i,s}
+\qquad\forall i,s.
+\label{eq:E_upper}
+\end{align}
+These ensure \(E_{i,s}=1\) exactly when cell \(i\) is newly added for species \(s\).
+
+\subsection*{1.2 Area aggregates}
+
+\noindent Total (final) area by species:
+\begin{align}
+A_s \;=\; \sum_{i\in I} area_i \; T_{i,s}
+\qquad\forall s\in S.
+\label{eq:As}
+\end{align}
+
+\noindent Total expanded area (for cost accounting) by species:
+\begin{align}
+ExpArea_s \;=\; \sum_{i\in I} area_i \; E_{i,s}
+\qquad\forall s\in S.
+\label{eq:ExpArea}
+\end{align}
+
+\subsection*{1.3 Budget / cost accounting (global / stage-level)}
+
+\noindent Total adaptation (expansion) cost and corridor cost:
+\begin{align}
+Cost^{\text{adapt}} &\;=\; \sum_{s\in S}\sum_{i\in I} cost^{T}_{i,s} \; E_{i,s},\\[4pt]
+Cost^{\text{corr}} &\;=\; \sum_{i\in I} cost^{C}_{i} \; C_{i}.
+\end{align}
+
+\noindent Example global budget constraint (use stage-specific budget where appropriate):
+\begin{align}
+Cost^{\text{adapt}} + Cost^{\text{corr}} \;\le\; Budget_{\text{total}}.
+\label{eq:budget}
+\end{align}
+
+\subsection*{1.4 Adjacency / geometry precomputation and usage note}
+
+\noindent We assume the adjacency relation $\mathrm{Adj}$ is precomputed externally (parameter): \((i,j)\in\mathrm{Adj}\) iff cells \(i\) and \(j\) share a side (4-neighborhood).  
+Use the set $\mathrm{Adj}$ in later constraints that require adjacency (expansion adjacency, corridor continuity, flow conservation, etc.).
+
+\subsection*{1.5 Corridor logical linking}
+
+\noindent A corridor cell must be opened before a species may use it:
+\begin{align}
+& use_{i,s} \;\le\; C_i, \qquad \forall i\in I,\; s\in S. \label{eq:use_le_C}
+\end{align}
+
+\noindent Optionally require that only species with territory overlap or explicit allowance may use corridor cell:
+\begin{align}
+& use_{i,s} \;\le\; T_{i,s} + Y_{i,s}^{\text{allow}}, \qquad Y_{i,s}^{\text{allow}} \in \{0,1\},
+\label{eq:use_requires_overlap_or_allow}
+\end{align}
+where \(Y_{i,s}^{\text{allow}}\) is a user-controlled switch permitting corridor use by \(s\) in cell \(i\) even without territory overlap. (If you always allow usage whenever corridor exists and species has territory access, you may omit \(Y\).)
+
+\subsection*{1.6 Corridor-edge linking (optional)}
+
+\noindent If using edge binaries \(\lambda_{(i,j),s}\) to represent corridor edges used by species \(s\), link them to corridor cells:
+\begin{align}
+& \lambda_{(i,j),s} \;\le\; C_i,\qquad
+  \lambda_{(i,j),s} \;\le\; C_j, \qquad
+  \lambda_{(i,j),s} \;\ge\; C_i + C_j - 1,
+  \label{eq:edge_C_link}
+\end{align}
+\noindent and if per-species edge usage must be tied to species accessibility:
+\begin{align}
+\lambda_{(i,j),s} \;\le\; use_{i,s}, \qquad
+\lambda_{(i,j),s} \;\le\; use_{j,s}.
+\label{eq:edge_use_link}
+\end{align}
+
+\subsection*{1.7 Suitability-based hard exclusions (optional)}
+
+\noindent If you want to {\bf forbid} selection of cells that are unsuitable for a species (hard exclusion), define a binary parameter \(allowed_{i,s}\in\{0,1\}\) by preprocessing:
+\[
+allowed_{i,s} \;=\; \begin{cases} 1 & \text{if } suit_{i,s} \ge \tau_s,\\
+0 & \text{otherwise,} \end{cases}
+\]
+for some threshold \(\tau_s\). Then impose:
+\begin{align}
+& T_{i,s} \;\le\; allowed_{i,s}, \qquad E_{i,s} \;\le\; allowed_{i,s}
+\qquad\forall i,s.
+\label{eq:suit_exclude}
+\end{align}
+
+\noindent If you prefer soft exclusion, instead multiply suitability into the objective and do not enforce \eqref{eq:suit_exclude}.
+
+\subsection*{1.8 Conflict / predator–prey overlap protection (do not worsen initial conflicts)}
+
+\noindent Let \(P\) be the set of unordered species-pairs with conflicts:
+\[
+P \;=\; \{(s,s')\in S\times S : conflict(s,s')=1,\; s<s'\}.
+\]
+\noindent Precompute the original overlap indicator for each cell and pair:
+\[
+orig\_overlap_{i,s,s'} \;:=\; orig\_has_{i,s}\cdot orig\_has_{i,s'}
+\]
+(this is a parameter equal to 1 if both species originally co-occur in cell \(i\), 0 otherwise).
+
+\noindent Introduce linearized overlap binaries for final map:
+\[
+O_{i,s,s'} \in\{0,1\},\qquad
+O_{i,s,s'} \le T_{i,s},\quad O_{i,s,s'} \le T_{i,s'},\quad
+O_{i,s,s'} \ge T_{i,s} + T_{i,s'} - 1,
+\]
+for all \((s,s')\in P,\; i\in I\). These enforce \(O_{i,s,s'} = 1\) iff both species occupy cell \(i\) in the final plan.
+
+\noindent Constraint: do not increase the number of overlapping cells relative to the original map:
+\begin{align}
+\sum_{i\in I} O_{i,s,s'} \;\le\; \sum_{i\in I} orig\_overlap_{i,s,s'}
+\qquad\forall (s,s')\in P.
+\label{eq:do_not_worsen_overlap}
+\end{align}
+This enforces your rule: "If there is any overlap between initial conflicting colonies at the beginning, we ignore it and expand in a way that does not worsen the situation."
+
+\subsection*{1.9 Corridor exclusivity for conflicting species}
+
+\noindent Prevent conflicting species from sharing the {\em same} corridor cell (if required):
+\[
+use_{i,s} + use_{i,s'} \;\le\; 1 \qquad
+\forall (s,s')\in P,\; i\in I.
+\label{eq:corridor_exclusive}
+\]
+
+\subsection*{1.10 Bookkeeping / useful derived quantities}
+
+\noindent Number of corridor cells usable by species \(s\):
+\[
+Y_{cells,s} \;=\; \sum_{i\in I} use_{i,s}.
+\]
+
+\noindent Number of corridor edges used by species \(s\) (if edges used):
+\[
+Y_{edges,s} \;=\; \sum_{(i,j)\in\mathrm{Adj}} \lambda_{(i,j),s}.
+\]
+
+\subsection*{1.11 Soft enforcement note for tree-like corridors}
+
+\noindent The strict constraint ``no cycles; corridor count \(\le n_s-1\)'' can be computationally heavy.
+We therefore recommend implementing this concept as a \emph{soft} preference:
+\[
+\text{penalize }\; \sum_{(i,j)\in\mathrm{Adj}}\sum_{s\in S}\lambda_{(i,j),s}
+\quad\text{in the objective (small weight)}
+\]
+rather than enforcing a combinatorial cycle-elimination constraint. If you prefer a hard tree constraint later, add connectivity-flow formulations with cut/MTZ-style subtour elimination (but be aware of model size).
+
+\bigskip
+
+% End of general constraints block
+
+% -------------------------
+% 2. Territory formation \& expansion constraints
+% -------------------------
+\section*{Constraints — Territory formation \& expansion}
+
+\paragraph{Notation reminder (new items used here).}
+\[
+\begin{aligned}
+& T_{i,s,k} \in \{0,1\} \text{ for } k\in K_s:
+    \text{ cell $i$ is assigned to final territory of original patch } k,\\
+& patchOf_{i,s} \text{ : parameter mapping original cell $i$ to its original patch } k\in K_s\\
+& \text{ (defined only when } orig\_has_{i,s}=1\text{)},\\
+& f_{i,j,s,k} \ge 0 \text{ : continuous flow on directed arc } (i\to j)
+    \text{ for patch } k\text{ of species } s,\\
+& U^{\text{flow}} \text{ : a large upper bound for flow (suggest } U^{\text{flow}} = |I|\text{).}
+\end{aligned}
+\]
+
+\subsection*{2.1 Patch assignment and no-merge}
+
+\noindent \textbf{(a) Decompose species membership by original patch.}
+\begin{align}
+& T_{i,s} \;=\; \sum_{k\in K_s} T_{i,s,k}
+    \qquad \forall i\in I,\; s\in S,
+\label{eq:Ti_decomp}
+\end{align}
+with the interpretation that every final membership \(T_{i,s}\) is assigned to exactly one original patch of the same species.
+
+\noindent \textbf{(b) Prevent a cell being assigned to more than one original patch of the same species (no-merge).}
+\begin{align}
+& \sum_{k\in K_s} T_{i,s,k} \;\le\; 1
+    \qquad \forall i\in I,\; s\in S.
+\label{eq:no_merge}
+\end{align}
+
+\noindent \textbf{(c) Fix original patch assignments for original cells.}
+For each original cell \(i\) and species \(s\) let \(k = patchOf_{i,s}\) be its original patch id (parameter). Then:
+\begin{align}
+& T_{i,s,k} \;=\; orig\_has_{i,s}
+    \qquad \forall i\in I,\; s\in S \text{ with } orig\_has_{i,s}=1.
+\label{eq:orig_assign}
+\end{align}
+(If a species does not originally occupy cell \(i\), there is no enforced equality in \eqref{eq:orig_assign}.)
+
+\subsection*{2.2 Per-patch area accounting and A1/A2 split (for Stage 2 reward)}
+
+\noindent \textbf{(a) Patch area variables.}
+\[
+A_{k,s} \;=\; \sum_{i\in I} area_i \; T_{i,s,k}
+        \qquad \forall s\in S,\; k\in K_s.
+\label{eq:patch_area}
+\]
+
+\noindent \textbf{(b) Per-patch A1/A2 split that implements "reward = 1 up to mean, 0.7 beyond".}
+For every original patch \(k\in K_s\) we define:
+\begin{align}
+& A1_{k,s} + A2_{k,s} \;=\; A_{k,s}, \label{eq:A_split_sum}\\[4pt]
+& 0 \;\le\; A1_{k,s} \;\le\; meanArea_s, \qquad A2_{k,s} \;\ge\; 0.
+\label{eq:A_split_bounds}
+\end{align}
+(At optimum, \(A1_{k,s} = \min\{A_{k,s}, meanArea_s\}\) and \(A2_{k,s} = \max\{0, A_{k,s} - meanArea_s\}\).)
+
+\noindent \textbf{(c) Species-level aggregates (useful in objectives).}
+\begin{align}
+& A_{s} \;=\; \sum_{k\in K_s} A_{k,s}, \qquad
+  A1_{s} \;=\; \sum_{k\in K_s} A1_{k,s}, \qquad
+  A2_{s} \;=\; \sum_{k\in K_s} A2_{k,s}.
+\label{eq:species_agg}
+\end{align}
+
+\subsection*{2.3 Minimal / maximum area per patch / species (Stage 1 \& 3)}
+
+\noindent \textbf{(a) Per-species Stage~1 minimal requirement (hard):}
+\begin{align}
+& A_{s} \;\ge\; n_s \cdot meanArea_s \;-\; m_s \;=\; Rmean_s
+    \qquad \forall s\in S,
+\label{eq:species_min}
+\end{align}
+or, if you want to enforce per-patch minima instead, require:
+\begin{align}
+& A_{k,s} \;\ge\; minArea_{k,s}
+    \qquad \forall s\in S,\; k\in K_s.
+\label{eq:patch_min}
+\end{align}
+
+\noindent \textbf{(b) Per-species maximum cap (Stage~3 constraint):}
+\begin{align}
+& A_{s} \;\le\; n_s \cdot k_s \;-\; m_s
+    \qquad \forall s\in S.
+\label{eq:species_max}
+\end{align}
+
+\subsection*{2.4 Adjacency-based expansion feasibility (local rule)}
+
+\noindent New expansions must be adjacent to existing territory (original or newly expanded). For each cell \(i\) and species \(s\):
+\begin{align}
+& E_{i,s} \;\le\; \sum_{j:\,(i,j)\in\mathrm{Adj}} T_{j,s}.
+\label{eq:expansion_adj}
+\end{align}
+This enforces: if \(E_{i,s}=1\) then at least one neighbor \(j\) has \(T_{j,s}=1\) (original or expanded) ensuring local growth only.
+
+\subsection*{2.5 Flow-based connectivity certification for each original patch (guarantees contiguity)}
+
+\noindent Rationale: to ensure that all cells assigned to a particular original patch \(k\in K_s\) form a connected region reachable from the chosen patch root \(r = patchroot_{s,k}\), we use a single-commodity flow construction.
+
+\paragraph{Definitions / bounds.}
+\[
+\begin{aligned}
+& f_{i,j,s,k} \ge 0 \quad \forall (i,j)\in\mathrm{Adj},\; s\in S,\; k\in K_s
+\qquad\text{(directed flow variable on edge $i\to j$)},\\
+& \text{choose } U^{\text{flow}} = |I| \text{ (or } \sum_i \mathbf{1}\text{)} \text{ as an upper bound.}
+\end{aligned}
+\]
+
+\paragraph{Edge capacity / activation linking (optional)}  
+Optionally, introduce binary \(Z_{(i,j),s,k}\in\{0,1\}\) to indicate edge activation for patch \(k\).
+Link flows to activations if desired:
+\begin{align}
+& f_{i,j,s,k} \;\le\; U^{\text{flow}} \; Z_{(i,j),s,k}, 
+\qquad Z_{(i,j),s,k} \;\le\; T_{i,s,k}, \qquad Z_{(i,j),s,k} \;\le\; T_{j,s,k}.
+\label{eq:flow_edge_link}
+\end{align}
+(Using \(Z\)-binaries strengthens the formulation but increases binary count; the formulation remains valid without \(Z\) by using bounds on \(f\) tied to \(T\).)
+
+\paragraph{Flow conservation / demand definition.}
+Let \(r = patchroot_{s,k}\). For each node \(i\in I\) and each \(s,k\):
+\begin{align}
+& \sum_{j:\,(j,i)\in\mathrm{Adj}} f_{j,i,s,k} \;-\; \sum_{j:\,(i,j)\in\mathrm{Adj}} f_{i,j,s,k}
+    \;=\; d_{i,s,k},
+\label{eq:flow_cons}
+\end{align}
+where the right-hand side \(d_{i,s,k}\) is defined as:
+\[
+d_{i,s,k} \;=\;
+\begin{cases}
+- \displaystyle \sum_{i'\in I\setminus\{r\}} T_{i',s,k} 
+    & \text{if } i = r \quad (\text{root supplies total demand}),\\[8pt]
+\; T_{i,s,k}      & \text{if } i \ne r \quad (\text{each selected non-root node demands 1 unit}).
+\end{cases}
+\]
+This enforces that for each selected node \(i\ne r\) exactly one unit of flow must reach it from the root \(r\).
+
+\paragraph{Flow-variable bounding by selection (to prevent flow through unselected nodes).}
+For every arc \((i,j)\) and patch \(k\):
+\begin{align}
+& f_{i,j,s,k} \;\le\; U^{\text{flow}} \; T_{i,s,k}, \label{eq:flow_Ti_bound}\\
+& f_{i,j,s,k} \;\le\; U^{\text{flow}} \; T_{j,s,k}. \label{eq:flow_Tj_bound}
+\end{align}
+Thus flows can be nonzero only on arcs whose both endpoints are selected for the same patch (either enforced via these bounds or via the optional \(Z\) variables in \eqref{eq:flow_edge_link}).
+
+\paragraph{Interpretation.}
+If a node \(i\) is selected for patch \(k\) then the flow constraints force a path of positive flow from the root \(r\) to \(i\) using only nodes/edges where \(T_{*,s,k}=1\). This certifies contiguity of the final patch \(k\).
+
+\subsection*{2.6 Species absence and preventing expansions for absent species}
+
+\noindent If a species \(s\) has no original patches (\(n_s=0\)), disallow expansion and territory:
+\begin{align}
+& T_{i,s} \;=\; 0,\qquad E_{i,s} \;=\; 0
+    \qquad \forall i\in I,\; \text{if } n_s = 0.
+\label{eq:no_species}
+\end{align}
+
+\subsection*{2.7 Symmetry-breaking (optional, helps solver)}
+
+\noindent To reduce symmetric solutions among interchangeable patches, you may impose ordering on patch indices using e.g. root-cell ids or patch areas:
+\[
+A_{k,s} \;\ge\; A_{k+1,s} \qquad \forall s\in S,\; k \text{ ordered by patch id}
+\]
+(Use only if necessary — adds constraints but can speed up branch-and-bound.)
+
+% End of Territory formation & expansion constraints block
+
+% -------------------------
+% 3. Corridor constraints
+% -------------------------
+\section*{Constraints — Corridor design \& connectivity}
+
+\paragraph{Notation reminder (new variables used here).}
+\[
+\begin{aligned}
+& C_i\in\{0,1\} \quad\text{(corridor built in cell $i$)},\\
+& use_{i,s}\in\{0,1\} \quad\text{(species $s$ may use corridor cell $i$)},\\
+& \lambda_{(i,j),s}\in\{0,1\} \quad\text{(corridor edge $(i,j)\in\mathrm{Adj}$ used by species $s$)},\\
+& Overlap_{i,s,k}\in\{0,1\} \quad\text{(corridor $i$ overlaps patch $k$ of species $s$)},\\
+& conn_{s,k}\in\{0,1\} \quad\text{(patch $k$ of species $s$ is corridor-connected to root)},\\
+& g_{i,j,s}\ge 0 \quad\text{(continuous corridor flow on arc $i\to j$ for species $s$)},\\
+& Inject_{s,i,k}\ge 0 \quad\text{(flow injection at corridor cell $i$ for patch $k$ of species $s$)},\\
+& U^{\text{corr}} \text{ : an upper bound for corridor flows (suggest } U^{\text{corr}}=|I|).
+\end{aligned}
+\]
+
+\subsection*{3.1 Corridor cell — basic links}
+
+\noindent A corridor cell must be opened before it can be used:
+\begin{align}
+use_{i,s} \;\le\; C_i \qquad \forall i\in I,\; s\in S.
+\label{eq:use_le_C_repeat}
+\end{align}
+
+\noindent If corridors should be usable by a species only when overlapping its territory (or explicitly allowed), enforce:
+\begin{align}
+use_{i,s} \;\le\; T_{i,s} + Allow_{i,s}, \qquad Allow_{i,s}\in\{0,1\},
+\label{eq:use_requires_overlap_repeat}
+\end{align}
+where \(Allow_{i,s}\) enables using corridor \(i\) for species \(s\) even without territory overlap (optional).
+
+\subsection*{3.2 Corridor edges (connectivity graph) and linking}
+
+\noindent Edge activation variables \(\lambda_{(i,j),s}\) must be linked to corridor cells:
+\begin{align}
+& \lambda_{(i,j),s} \;\le\; C_i, \qquad
+  \lambda_{(i,j),s} \;\le\; C_j, \qquad
+  \lambda_{(i,j),s} \;\ge\; C_i + C_j - 1, \qquad \forall (i,j)\in\mathrm{Adj},\; s\in S.
+\label{eq:edge_cell_link_repeat}
+\end{align}
+
+\noindent Per-species edge activation requires species access to both end cells:
+\begin{align}
+\lambda_{(i,j),s} \;\le\; use_{i,s}, \qquad
+\lambda_{(i,j),s} \;\le\; use_{j,s} \qquad \forall (i,j), s.
+\label{eq:edge_use_link_repeat}
+\end{align}
+
+\subsection*{3.3 Gateway variables — corridor overlap with patches}
+
+\noindent Linearized overlap indicator between corridor cell and patch:
+\[
+Overlap_{i,s,k} \in\{0,1\},\qquad
+Overlap_{i,s,k} \le C_i,\qquad
+\]
+\[
+Overlap_{i,s,k} \le T_{i,s,k},\qquad
+Overlap_{i,s,k} \ge C_i + T_{i,s,k} - 1,
+\]
+for all \(i\in I,\; s\in S,\; k\in K_s\).
+
+\noindent Gateway indicator: patch \(k\) has a corridor gateway if any overlap occurs:
+\begin{align}
+& \sum_{i\in I} Overlap_{i,s,k} \;\ge\; Gateway_{s,k}, \qquad
+  \sum_{i\in I} Overlap_{i,s,k} \;\le\; U^{\text{gw}} \; Gateway_{s,k},
+\label{eq:gateway_def}
+\end{align}
+where \(Gateway_{s,k}\in\{0,1\}\) and \(U^{\text{gw}}\) is a small integer bound (e.g. 10 or number of cells in patch).  
+Also ensure:
+\begin{align}
+Gateway_{s,k} \;\le\; \sum_{i\in I} Overlap_{i,s,k} .
+\end{align}
+
+\subsection*{3.4 Corridor flow: certifying patch-to-root connectivity}
+
+\noindent Rationale: to certify that patch \(k\) is connected to the chosen root patch via a corridor path accessible to species \(s\), use a single-commodity corridor flow on the corridor graph (cells as nodes, \(\lambda\)-activated edges).
+
+\paragraph{Flow variables and bounds.}
+\[
+g_{i,j,s} \ge 0 \qquad \forall (i,j)\in\mathrm{Adj},\; s\in S,
+\]
+with linking to edge activation:
+\begin{align}
+g_{i,j,s} \;\le\; U^{\text{corr}} \; \lambda_{(i,j),s},
+\label{eq:flow_edge_link}
+\end{align}
+so flow can pass only on activated edges.
+
+\paragraph{Injectors: one unit per connected patch.}  
+For each patch \(k\in K_s\) we allow one unit of flow to be injected at one of its gateway corridor cells when we claim the patch is connected:
+\begin{align}
+& Inject_{s,i,k} \;\le\; Overlap_{i,s,k} \cdot U^{\text{corr}}, \qquad
+  \sum_{i\in I} Inject_{s,i,k} \;=\; conn_{s,k}, \qquad
+  Inject_{s,i,k} \ge 0.
+\label{eq:inject_def}
+\end{align}
+Interpretation: if \(conn_{s,k}=1\) then exactly one unit must be injected at one corridor cell overlapping the patch \(k\).
+
+\paragraph{Source / sink (root) handling.}  
+Let \(k_r\) denote the chosen root patch for species \(s\) with some corridor cell(s) overlapping it. To absorb the flow we treat any corridor cell overlapping the root as a sink node (or alternatively include a super-sink connected to these cells). Using a super-sink \(t_s\) is convenient:
+
+- Create a super-sink \(t_s\) (not a grid cell).  
+- Connect every corridor cell \(i\) overlapping root patch \(k_r\) to \(t_s\) with infinite capacity edges (or capacity \(U^{\text{corr}}\)).  
+- Flow conservation will route injected units to the super-sink.
+
+\paragraph{Flow conservation at corridor cell nodes.}
+For each corridor cell \(i\in I\) and species \(s\):
+\begin{align}
+\sum_{j:(j,i)\in\mathrm{Adj}} g_{j,i,s} + \sum_{k\in K_s} Inject_{s,i,k}
+\;=\;
+\sum_{j:(i,j)\in\mathrm{Adj}} g_{i,j,s} + Sink_{i,s},
+\label{eq:flow_cons_corr}
+\end{align}
+where \(Sink_{i,s}\) is the flow absorbed at cell \(i\) if \(i\) connects to the sink \(t_s\). For cells not connected to sink, \(Sink_{i,s}=0\); for sink-adjacent cells \(Sink_{i,s}\) equals the incoming flow absorbed.
+
+\paragraph{Link $conn_{s,k}$ to gateways.}
+\[
+conn_{s,k} \;\le\; Gateway_{s,k}, \qquad \forall s,k.
+\]
+This prevents claiming a patch is connected if it has no gateway.
+
+\paragraph{Interpretation / correctness.}
+If \(conn_{s,k}=1\), then one unit of flow must be injected at some gateway corridor cell of patch \(k\) and must reach the super-sink (root overlap) via activated edges \(\lambda_{(i,j),s}\). Hence \(conn_{s,k}=1\) certifies existence of a corridor path connecting patch \(k\) to the root.
+
+\subsection*{3.5 Corridor exclusivity for conflicting species (repeated)}
+
+\noindent For predator–prey or other conflict pairs \((s,s')\in P\) enforce that they cannot both use the same corridor cell:
+\begin{align}
+use_{i,s} + use_{i,s'} \;\le\; 1 \qquad \forall i\in I,\; (s,s')\in P.
+\label{eq:corridor_exclusive_repeat}
+\end{align}
+(If you prefer to allow corridor sharing but forbid simultaneous passage, adapt to time-sliced or capacity-based models — beyond current scope.)
+
+\subsection*{3.6 Corridor costs and stage-budget linking}
+
+\noindent Corridor cost accounting (repeat):
+\[
+Cost^{\text{corr}} \;=\; \sum_{i\in I} cost^{C}_{i} \; C_i.
+\]
+Include \(Cost^{\text{corr}}\) in stage budgets (Stage~2 main solve). When running Stage~3, fix \(C_i\) decided earlier or allow incremental \(C_i^{(3)}\) decision variables as needed.
+
+\subsection*{3.7 Soft tree-like penalty (recommended)}
+
+\noindent To favor tree-like corridor graphs without imposing NP-hard subtour elimination, penalize the total number of corridor edges used in the objective with a small weight \(\gamma_{\mathrm{edge}}\):
+\[
+\text{Penalty}_{\mathrm{edges}} \;=\; \gamma_{\mathrm{edge}} \sum_{s\in S} \sum_{(i,j)\in\mathrm{Adj}} \lambda_{(i,j),s}.
+\]
+This encourages sparser, near-tree corridor structures while leaving cycles permissible when they are beneficial.
+
+\subsection*{3.8 Special cases and numerical considerations}
+
+\begin{itemize}
+  \item If \(n_s \le 1\) (only 0 or 1 original patch), set \(conn_{s,k}=0\) and do not attempt corridor flow for that species.  
+  \item Choose \(U^{\text{corr}}\) as tight as possible (e.g. \(U^{\text{corr}} = |\{ \text{corridor cells} \}|\) upper bound) to tighten LP relaxations.  
+  \item If model size becomes large, consider solving corridor design on a reduced \emph{patch graph} (nodes = patches; arc weights = shortestpath costs), then map back to grid cells via shortest-path heuristics. This significantly reduces corridor-related variables and constraints.
+\end{itemize}
+
+% End of Corridor constraints block
+
+% -------------------------
+% 4. Predator–prey / interaction constraints
+% -------------------------
+\section*{Constraints — Predator–prey and species interaction}
+
+\paragraph{Interpretation and scope.}
+We assume a set of predator–prey pairs \(P_{\text{pred}} \subseteq S\times S\) where the first element is the predator (e.g. \(M\)) and the second is the prey (e.g. \(E\) or \(O\)). For all \((p,r)\in P_{\text{pred}}\) the model must ensure that final planning does not \emph{worsen} predator–prey co-occurrence at the cell level: no new cell-level overlaps between predator \(p\) and prey \(r\) may be created (though existing overlaps that are present in the original map are tolerated).
+
+\subsection*{4.1 Cell-level no-new-overlap for predator–prey pairs (strict)}
+
+\noindent Precompute original co-occurrence parameter:
+\[
+orig\_overlap_{i,p,r} \;=\; orig\_has_{i,p}\cdot orig\_has_{i,r},
+\qquad \forall i\in I,\; (p,r)\in P_{\text{pred}}.
+\]
+
+\noindent Linearized final overlap indicator (repeated for clarity):
+\[
+\begin{aligned}
+& O_{i,p,r} \in\{0,1\},\\[4pt]
+& O_{i,p,r} \;\le\; T_{i,p},\qquad O_{i,p,r} \;\le\; T_{i,r},\\[4pt]
+& O_{i,p,r} \;\ge\; T_{i,p} + T_{i,r} - 1.
+\end{aligned}
+\]
+
+\noindent \textbf{Strict no-new-overlap constraint (per cell):}
+\begin{align}
+O_{i,p,r} \;\le\; orig\_overlap_{i,p,r}
+\qquad \forall i\in I,\; (p,r)\in P_{\text{pred}}.
+\label{eq:pred_cell_no_new}
+\end{align}
+
+\noindent This enforces that a predator \(p\) and prey \(r\) can co-occur in cell \(i\) in the final plan only if they already co-occurred there originally.
+
+\subsection*{4.2 No expansion of predator into prey-occupied cells (alternative / redundant)}
+
+\noindent An equivalent linear form (redundant if \eqref{eq:pred_cell_no_new} is used) that explicitly prevents the predator from occupying any cell that the prey occupies unless originally co-occupied:
+\[
+T_{i,p} \;\le\; 1 - (T_{i,r} - orig\_has_{i,p}\cdot orig\_has_{i,r})
+\qquad \forall i,\; (p,r)\in P_{\text{pred}}.
+\]
+This is stronger-looking in algebraic form but logically equivalent to the cell-level overlap prohibition above.
+
+\subsection*{4.3 Corridor exclusivity reiterated}
+
+\noindent Predator and prey should not be permitted to use the same corridor cells:
+\[
+use_{i,p} + use_{i,r} \;\le\; 1 \qquad \forall i\in I,\; (p,r)\in P_{\text{pred}}.
+\]
+This was already included in general constraints but is repeated here for emphasis.
+
+\subsection*{4.4 Prevent predator expansions that simultaneously overlap original and newly-expanded prey territory (optional special rule)}
+
+\noindent You requested a special rule that prevents predator \(p\) from expanding into cells that would cause it to intersect both original and newly-expanded territories of prey \(r\). One linear implementation is:
+
+\[
+\begin{aligned}
+& \text{For each cell } i:\quad
+E_{i,p} + orig\_has_{i,r} + E_{i,r} \;\le\; 2.
+\end{aligned}
+\]
+
+\noindent Explanation: If both \(orig\_has_{i,r}=1\) (prey originally present) and \(E_{i,r}=1\) (prey newly expanded into the cell), then \(orig\_has_{i,r} + E_{i,r} \ge 1\); the inequality above prevents \(E_{i,p}=1\) when both are present in a way that would make predator expansion coincide with prey original+expanded presence.  
+This rule is optional and should be used only if the biological justification is necessary — otherwise the strict per-cell no-new-overlap (Section~4.1) is sufficient.
+
+\subsection*{4.5 Optional buffer-zone (neighborhood) constraints for prey protection}
+
+\noindent If you wish to enforce a one-cell buffer (no predator expansion into any cell adjacent to a prey's final territory), include this neighbor-based linear constraint for all \((p,r)\in P_{\text{pred}}\):
+\[
+E_{i,p} \;\le\; 1 - \max_{j:\,(i,j)\in\mathrm{Adj}} T_{j,r},
+\qquad \forall i\in I.
+\]
+\noindent Linearized as:
+\[
+E_{i,p} \;\le\; 1 - B_{i,r}, \qquad
+B_{i,r} \;\ge\; T_{j,r} \quad \forall j:(i,j)\in\mathrm{Adj},\quad
+B_{i,r}\in\{0,1\}.
+\]
+This forces predator \(p\) to avoid any cell adjacent to the prey's final territory. Use only if buffer protection is required.
+
+\subsection*{4.6 Remarks on alternatives and model behavior}
+
+\begin{itemize}
+  \item Using per-cell no-new-overlap \eqref{eq:pred_cell_no_new} is conservative and safe: predators never newly co-occur with prey in any cell. If you prefer a more flexible policy (e.g. allow some controlled new overlaps as long as total overlap does not increase), replace the per-cell constraint by the earlier sum-level constraint:
+  \[
+  \sum_{i\in I} O_{i,p,r} \;\le\; \sum_{i\in I} orig\_overlap_{i,p,r}.
+  \]
+  \item Corridor exclusivity is required to prevent predator and prey from using the same corridor cells and potentially transmitting predation through the same route. This is enforced by the `use` variables constraint above.
+  \item If some initial overlaps exist (orig\_overlap = 1), the model will not remove them (we preserve originals) but will not create any new overlapping cells involving predator–prey pairs.
+\end{itemize}
+
+
+\end{document}
