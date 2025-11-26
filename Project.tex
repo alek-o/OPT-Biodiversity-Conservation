@@ -15,7 +15,7 @@
     \item $\mathrm{Adj} \subseteq I \times I$ : adjacency relation; 
           $(i,j) \in \mathrm{Adj}$ if and only if cells $i$ and $j$ 
           share a side (4-neighborhood).
-    \item $K_s$ : set of original colonies (territories) of species $s$.
+    \item $K_s$ : set of original colonies (territories) of sp.56ecies $s$.
           Each $k \in K_s$ represents one connected component 
           of originally occupied cells.
 \end{itemize}
@@ -72,14 +72,25 @@
     \item $C_i \in \{0,1\}$ : 
           1 if a corridor is built in cell $i$, 0 otherwise.
 
-    \item $use_{i,s} \in \{0,1\}$ :
-          1 if species $s$ is permitted to use the corridor in cell $i$, 
-          0 otherwise.
-
     % CONNECTIVITY LINKING VARIABLES
     \item $\lambda_{(i,j),s} \in \{0,1\}$ :
           1 if species $s$ uses adjacency $(i,j) \in \mathrm{Adj}$ as a 
           corridor connection between two territories.
+      
+    \item $Reach_{i,s,k} \in \{0,1\} 
+    \quad\text{for } i\in I,\; s\in S,\; k\in K_s,$:
+          1 if colony $k$ of species $s$ can reach cell $i$ via corridors, 
+          0 otherwise.
+
+    \item $g_{i,j,s,k} \ge 0 $:
+          corridor flow on arc $i\to j$for colony $k$ of species $s$.
+
+    \item $Inject_{s,i,k} \ge 0$:
+          flow injected at corridor cell $i$ for colony $k$ of species $s$.
+
+    \item $use_{i,s}\in\{0,1\}$:
+         species-level corridor-use; optional.
+
 \end{itemize}
 
 
@@ -146,7 +157,7 @@
 % -------------------------
 \subsection*{Precomputed parameter}
 \begin{itemize}
-  \item \(\rho_{i,s} := \dfrac{area_i}{cost^{T}_{i,s}}\) (precompute for each cell and species; assume \(cost^{T}_{i,s}>0\)). 
+  \item \(\rho_{i,s} := \dfrac{area_i}{cost^{T}_{i,s}}\) (precompute for each 0 and species; assume \(cost^{T}_{i,s}>0\)). 
         \textit{This is a constant parameter used to linearize area-per-cost preference.}
 \end{itemize}
 
@@ -173,8 +184,9 @@ subject to Stage~1 feasibility constraints, e.g.:
 \[
 \begin{aligned}
 & \text{(a) Minimal area per species:} \\
-& \sum_{i\in I} area_i \; E_{i,s} \; \ge \; Rmean_s
+& R_{\min,s} \;\le\; \sum_{i\in I} area_i \, E_{i,s} \;\le\; R_{\min,s} + A_{\max}^{\text{cell}}
       \quad \forall s \in S, \\[4pt]
+& \text{where \(A_{\max}^{\text{cell}} := \max_{i\in I} area_i\).}
 & \text{(b) Expansion feasibility (adjacency \& connectivity):} \\
 & \text{(constraints ensuring each expanded cell is adjacent / reachable to its original patch)} \\[4pt]
 & \text{(c) No-merge and conflict rules:} \\
@@ -188,10 +200,6 @@ subject to Stage~1 feasibility constraints, e.g.:
 \[
 \text{(Note)}\quad \rho_{i,s} \text{ and } suit_{i,s} \text{ are model parameters; the objective is linear in } E_{i,s}.
 \]
-
-\subsubsection{Constraints for Stage 1}
-
-
 
 
 \subsection{Stage 2 objective (satisfactory territory expansion with proportional corridor creation)}
@@ -214,9 +222,9 @@ subject to Stage~1 feasibility constraints, e.g.:
 & \text{choose } Y_s \text{ as either: }
     \begin{cases}
       \displaystyle Y_{cells,s} \;=\; \sum_{i\in I} use_{i,s}
-              &\text{(corridor cells assigned to species } s),\\[6pt]
+              &\text{(corridor cells assigned to species } s\text{ - easier}),\\[6pt]
       \displaystyle Y_{edges,s} \;=\; \sum_{(i,j)\in \mathrm{Adj}} \lambda_{(i,j),s}
-              &\text{(corridor edges used by species } s).\\
+              &\text{(corridor edges used by species } s \text{ - preferred}).\\
     \end{cases}
 \end{aligned}
 \]
@@ -246,7 +254,7 @@ where \(conn_{s,k}\in\{0,1\}\) indicates colony \(k\) of species \(s\) is certif
 \[
 \begin{aligned}
 \text{(Stage 2)}\quad & \max \; Z^{(2)} \;=\;
-  \underbrace{\sum_{s\in S} \Big( A_{1,s} \;+\; 0.7 \, A_{2,s} \Big)}_{\text{territory range-reward}}
+  \underbrace{\frac{\sum_{s\in S} \Big( A_{1,s} \;+\; 0.7 \, A_{2,s} \Big)}{0.56}}_{\text{territory range-reward (full cell units)}}
   \;+\; \underbrace{\gamma_{\mathrm{conn}} \sum_{s\in S} ConnectedCount_s}_{\text{connectivity reward}} \\
 &\qquad\qquad\qquad
   - \; \underbrace{\gamma_{\mathrm{cost}} \Big( \sum_{s\in S}\sum_{i\in I} cost^T_{i,s}\, E_{i,s}
@@ -265,8 +273,9 @@ where \(conn_{s,k}\in\{0,1\}\) indicates colony \(k\) of species \(s\) is certif
 
 \begin{itemize}
   \item \textbf{Choice of \(Y_s\):} for true tree semantics select \(Y_s := Y_{edges,s}\). If corridor costs and practical construction are cell-based, the simpler option is \(Y_s := Y_{cells,s}\). Use edges for proportionality to \(n_s-1\).
-  \item \(\gamma_{\mathrm{conn}}\) should reflect how valuable connecting one colony is relative to adding area. As a baseline, set \(\gamma_{\mathrm{conn}} \approx\) average per-patch area-equivalent (e.g. mean cell-area).
-  \item \(\gamma_{\mathrm{cost}}\) scales monetary costs into the same units as territory reward. If costs are already monetary and territory reward is in area units, normalize by converting one to the other or choose \(\gamma_{\mathrm{cost}}\) to produce desired trade-offs.
+  \item \(\gamma_{\mathrm{conn}}\) should reflect how valuable connecting one colony is relative to adding area. As a baseline, it can be set to \(\gamma_{\mathrm{conn}} \approx\) average per-patch area-equivalent (e.g. mean cell-area).
+  \item \(\gamma_{\mathrm{cost}}\) scales monetary costs into the same units as territory reward. If costs are already monetary and territory reward is in area units, normalize by converting one to the other or choose \(\gamma_{\mathrm{cost}}\) to produce desired trade-offs. Suggested equation: \(\gamma_{\text{costs}} = \frac{1}{|I|} \sum_{i \in I} \rho_{i,s} = \frac{1}{|I|} \sum_{i \in I} \frac{\text{cost}_{i,s}}{cost^T_{i,s}}
+\).
   \item \(\gamma_{\mathrm{edge}}\) should be small (e.g. 0.01–0.1 in normalized units) to prefer trees but not overrule connectivity gains.
   \item \(\gamma_{\mathrm{prop}}\) controls how tightly the proportion is enforced: large values \(\Rightarrow\) near-equality, small values \(\Rightarrow\) loose. Start with a moderate value and tune.
   \item For species with \(n_s\le 1\) or \(Rmean_s\le 0\), set \(dev_{s}^{\pm}=0\) (no proportional constraint) and either fix \(Y_s=0\) (no corridors) or treat corridor reward as zero for that species.
@@ -302,7 +311,7 @@ where $E_{i,s}^{(3)}$ are the Stage~3 decision binaries that equal 1 if cell $i$
 \begin{aligned}
 &\text{(a) Per-species maximum cap:} \\
 & \sum_{i\in I} area_i \; E_{i,s}^{(3)} \; \le \; Rmax_s
-    \quad \forall s\in S, [6pt]\\
+    \quad \forall s\in S, \\[6pt]
 &\text{(b) Budget constraint:} \\
 & \sum_{s\in S}\sum_{i\in I} cost^T_{i,s}\; E_{i,s}^{(3)} \;+\;
   \sum_{i\in I} cost^C_{i}\; C_i^{(3)} \; \le \; Budget_{\mathrm{rem}}, \\[6pt]
@@ -421,17 +430,15 @@ Use the set $\mathrm{Adj}$ in later constraints that require adjacency (expansio
 
 \subsection*{1.5 Corridor logical linking}
 
-\noindent A corridor cell must be opened before a species may use it:
-\begin{align}
-& use_{i,s} \;\le\; C_i, \qquad \forall i\in I,\; s\in S. \label{eq:use_le_C}
-\end{align}
+\noindent A species may use a corridor cell only if the cell is built as corridor:
+\[
+use_{i,s} \;\le\; C_i
+\qquad \forall i,s.
+\]
 
-\noindent Optionally require that only species with territory overlap or explicit allowance may use corridor cell:
-\begin{align}
-& use_{i,s} \;\le\; T_{i,s} + Y_{i,s}^{\text{allow}}, \qquad Y_{i,s}^{\text{allow}} \in \{0,1\},
-\label{eq:use_requires_overlap_or_allow}
-\end{align}
-where \(Y_{i,s}^{\text{allow}}\) is a user-controlled switch permitting corridor use by \(s\) in cell \(i\) even without territory overlap. (If you always allow usage whenever corridor exists and species has territory access, you may omit \(Y\).)
+\noindent
+\textbf{Note:} Corridor usage does \emph{not} require territory overlap.  
+Connectivity of a species to a corridor is handled solely through the corridor–patch gateway and flow constraints (Section~3).
 
 \subsection*{1.6 Corridor-edge linking (optional)}
 
@@ -703,164 +710,144 @@ A_{k,s} \;\ge\; A_{k+1,s} \qquad \forall s\in S,\; k \text{ ordered by patch id}
 % -------------------------
 % 3. Corridor constraints
 % -------------------------
-\section*{Constraints — Corridor design \& connectivity}
+% ============================================================
+% Corridor Design & Connectivity Constraints
+% ============================================================
 
-\paragraph{Notation reminder (new variables used here).}
+\section{Corridor Design and Connectivity Constraints}
+
+This section introduces binary corridor–cell variables, species–specific usage variables,
+patch–corridor overlap indicators, and the patch–level connectivity system based on the
+reachability variables \(Reach_{i,s,k}\). Connectivity is certified deterministically by
+propagating reachability through activated corridor edges.
+
+\vspace{6pt}
+\subsection{Notation (new variables)}
 \[
 \begin{aligned}
-& C_i\in\{0,1\} \quad\text{(corridor built in cell $i$)},\\
-& use_{i,s}\in\{0,1\} \quad\text{(species $s$ may use corridor cell $i$)},\\
-& \lambda_{(i,j),s}\in\{0,1\} \quad\text{(corridor edge $(i,j)\in\mathrm{Adj}$ used by species $s$)},\\
-& Overlap_{i,s,k}\in\{0,1\} \quad\text{(corridor $i$ overlaps patch $k$ of species $s$)},\\
-& conn_{s,k}\in\{0,1\} \quad\text{(patch $k$ of species $s$ is corridor-connected to root)},\\
-& g_{i,j,s}\ge 0 \quad\text{(continuous corridor flow on arc $i\to j$ for species $s$)},\\
-& Inject_{s,i,k}\ge 0 \quad\text{(flow injection at corridor cell $i$ for patch $k$ of species $s$)},\\
-& U^{\text{corr}} \text{ : an upper bound for corridor flows (suggest } U^{\text{corr}}=|I|).
+& C_i \in \{0,1\} && \text{corridor built in cell $i$},\\
+& use_{i,s} \in \{0,1\} && \text{species $s$ may use corridor cell $i$},\\
+& \lambda_{(i,j),s} \in \{0,1\} && \text{corridor edge $(i,j)\in Adj$ usable by species $s$},\\
+& Overlap_{i,s,k} \in \{0,1\} && \text{corridor cell $i$ overlaps patch $k$ of species $s$},\\
+& Gateway_{s,k} \in \{0,1\} && \text{patch $k$ of species $s$ has at least one corridor gateway},\\
+& Reach_{i,s,k} \in \{0,1\} && \text{cell $i$ is corridor-reachable from patch $k$ of species $s$}.
 \end{aligned}
 \]
 
-\subsection*{3.1 Corridor cell — basic links}
+% ------------------------------------------------------------
+\subsection{Corridor Cell Usage}
 
-\noindent A corridor cell must be opened before it can be used:
-\begin{align}
-use_{i,s} \;\le\; C_i \qquad \forall i\in I,\; s\in S.
-\label{eq:use_le_C_repeat}
-\end{align}
+A species may use a corridor cell only if the corridor cell exists:
+\begin{equation}
+use_{i,s} \;\le\; C_i \qquad \forall i \in I,\; s \in S.
+\end{equation}
 
-\noindent If corridors should be usable by a species only when overlapping its territory (or explicitly allowed), enforce:
-\begin{align}
-use_{i,s} \;\le\; T_{i,s} + Allow_{i,s}, \qquad Allow_{i,s}\in\{0,1\},
-\label{eq:use_requires_overlap_repeat}
-\end{align}
-where \(Allow_{i,s}\) enables using corridor \(i\) for species \(s\) even without territory overlap (optional).
+Optionally, require that species may use a corridor cell only if it overlaps their territory
+(unless explicitly allowed):
+\begin{equation}
+use_{i,s} \;\le\; T_{i,s} + Allow_{i,s}, \qquad Allow_{i,s} \in \{0,1\}.
+\end{equation}
 
-\subsection*{3.2 Corridor edges (connectivity graph) and linking}
+% ------------------------------------------------------------
+\subsection{Corridor Edges}
 
-\noindent Edge activation variables \(\lambda_{(i,j),s}\) must be linked to corridor cells:
+Corridor edges may be used only if both endpoint corridor cells are built:
 \begin{align}
 & \lambda_{(i,j),s} \;\le\; C_i, \qquad
-  \lambda_{(i,j),s} \;\le\; C_j, \qquad
-  \lambda_{(i,j),s} \;\ge\; C_i + C_j - 1, \qquad \forall (i,j)\in\mathrm{Adj},\; s\in S.
-\label{eq:edge_cell_link_repeat}
+  \lambda_{(i,j),s} \;\le\; C_j, \\
+& \lambda_{(i,j),s} \;\ge\; C_i + C_j - 1,
+  \qquad \forall (i,j)\in Adj,\; s\in S.
 \end{align}
 
-\noindent Per-species edge activation requires species access to both end cells:
+Species may use an edge only if they may use both endpoint cells:
 \begin{align}
 \lambda_{(i,j),s} \;\le\; use_{i,s}, \qquad
-\lambda_{(i,j),s} \;\le\; use_{j,s} \qquad \forall (i,j), s.
-\label{eq:edge_use_link_repeat}
+\lambda_{(i,j),s} \;\le\; use_{j,s}
+\qquad \forall (i,j)\in Adj,\; s\in S.
 \end{align}
 
-\subsection*{3.3 Gateway variables — corridor overlap with patches}
+% ------------------------------------------------------------
+\subsection{Corridor--Patch Overlap and Gateways}
 
-\noindent Linearized overlap indicator between corridor cell and patch:
-\[
-Overlap_{i,s,k} \in\{0,1\},\qquad
-Overlap_{i,s,k} \le C_i,\qquad
-\]
-\[
-Overlap_{i,s,k} \le T_{i,s,k},\qquad
-Overlap_{i,s,k} \ge C_i + T_{i,s,k} - 1,
-\]
-for all \(i\in I,\; s\in S,\; k\in K_s\).
-
-\noindent Gateway indicator: patch \(k\) has a corridor gateway if any overlap occurs:
+Corridor cell $i$ overlaps patch $k$ of species $s$ if and only if both conditions hold:
 \begin{align}
-& \sum_{i\in I} Overlap_{i,s,k} \;\ge\; Gateway_{s,k}, \qquad
-  \sum_{i\in I} Overlap_{i,s,k} \;\le\; U^{\text{gw}} \; Gateway_{s,k},
-\label{eq:gateway_def}
-\end{align}
-where \(Gateway_{s,k}\in\{0,1\}\) and \(U^{\text{gw}}\) is a small integer bound (e.g. 10 or number of cells in patch).  
-Also ensure:
-\begin{align}
-Gateway_{s,k} \;\le\; \sum_{i\in I} Overlap_{i,s,k} .
+& Overlap_{i,s,k} \;\le\; C_i, \\
+& Overlap_{i,s,k} \;\le\; T_{i,s,k}, \\
+& Overlap_{i,s,k} \;\ge\; C_i + T_{i,s,k} - 1,
+\qquad \forall i\in I,\; s\in S,\; k\in K_s.
 \end{align}
 
-\subsection*{3.4 Corridor flow: certifying patch-to-root connectivity}
-
-\noindent Rationale: to certify that patch \(k\) is connected to the chosen root patch via a corridor path accessible to species \(s\), use a single-commodity corridor flow on the corridor graph (cells as nodes, \(\lambda\)-activated edges).
-
-\paragraph{Flow variables and bounds.}
-\[
-g_{i,j,s} \ge 0 \qquad \forall (i,j)\in\mathrm{Adj},\; s\in S,
-\]
-with linking to edge activation:
+A patch has a corridor gateway if at least one corridor cell overlaps it:
 \begin{align}
-g_{i,j,s} \;\le\; U^{\text{corr}} \; \lambda_{(i,j),s},
-\label{eq:flow_edge_link}
+& \sum_{i \in I} Overlap_{i,s,k} \;\ge\; Gateway_{s,k}, \\
+& \sum_{i \in I} Overlap_{i,s,k} \;\le\; U^{gw} \, Gateway_{s,k},
 \end{align}
-so flow can pass only on activated edges.
+where $U^{gw}$ is an upper bound on possible gateway cells (e.g.\ patch area).
 
-\paragraph{Injectors: one unit per connected patch.}  
-For each patch \(k\in K_s\) we allow one unit of flow to be injected at one of its gateway corridor cells when we claim the patch is connected:
+% ------------------------------------------------------------
+\subsection{Corridor Reachability and Patch Connectivity}
+
+\paragraph{Initial reachability from a patch.}
+Any gateway cell of patch $k$ is initially reachable from patch $k$:
+\begin{equation}
+Reach_{i,s,k} \;\ge\; Overlap_{i,s,k} \qquad \forall i,s,k.
+\end{equation}
+
+\paragraph{Propagation of reachability through corridor edges.}
+Reachability spreads from $i$ to $j$ only if the corridor edge $(i,j)$
+is active and usable by species $s$:
 \begin{align}
-& Inject_{s,i,k} \;\le\; Overlap_{i,s,k} \cdot U^{\text{corr}}, \qquad
-  \sum_{i\in I} Inject_{s,i,k} \;=\; conn_{s,k}, \qquad
-  Inject_{s,i,k} \ge 0.
-\label{eq:inject_def}
+Reach_{j,s,k} &\;\ge\; Reach_{i,s,k} + \lambda_{(i,j),s} - 1,\\
+Reach_{i,s,k} &\;\ge\; Reach_{j,s,k} + \lambda_{(i,j),s} - 1,
+\qquad \forall (i,j)\in Adj,\; s\in S,\; k\in K_s.
 \end{align}
-Interpretation: if \(conn_{s,k}=1\) then exactly one unit must be injected at one corridor cell overlapping the patch \(k\).
 
-\paragraph{Source / sink (root) handling.}  
-Let \(k_r\) denote the chosen root patch for species \(s\) with some corridor cell(s) overlapping it. To absorb the flow we treat any corridor cell overlapping the root as a sink node (or alternatively include a super-sink connected to these cells). Using a super-sink \(t_s\) is convenient:
+\paragraph{Patch-to-root connectivity certification.}
+Let $k_r$ denote the chosen root patch of species $s$.
+Patch $k$ is considered corridor-connected to the root if a corridor cell that overlaps
+patch $k$ is reachable from any corridor cell overlapping the root:
+\begin{equation}
+conn_{s,k} \;\le\;
+\sum_{i\in I} Reach_{i,s,k_r} \cdot Overlap_{i,s,k},
+\qquad \forall s\in S,\; k\in K_s.
+\end{equation}
 
-- Create a super-sink \(t_s\) (not a grid cell).  
-- Connect every corridor cell \(i\) overlapping root patch \(k_r\) to \(t_s\) with infinite capacity edges (or capacity \(U^{\text{corr}}\)).  
-- Flow conservation will route injected units to the super-sink.
+Additionally, a patch cannot be connected unless it has a gateway:
+\begin{equation}
+conn_{s,k} \;\le\; Gateway_{s,k} \qquad \forall s,k.
+\end{equation}
 
-\paragraph{Flow conservation at corridor cell nodes.}
-For each corridor cell \(i\in I\) and species \(s\):
-\begin{align}
-\sum_{j:(j,i)\in\mathrm{Adj}} g_{j,i,s} + \sum_{k\in K_s} Inject_{s,i,k}
+% ------------------------------------------------------------
+\subsection{Corridor Exclusivity for Predator--Prey Species}
+
+For each predator–prey pair $(s,s')\in P$, disallow simultaneous use of a corridor cell:
+\begin{equation}
+use_{i,s} + use_{i,s'} \;\le\; 1
+\qquad
+\forall i\in I,\; (s,s')\in P.
+\end{equation}
+
+% ------------------------------------------------------------
+\subsection{Corridor Construction Cost}
+
+Corridor construction cost is accumulated as:
+\begin{equation}
+Cost^{corr} \;=\;
+\sum_{i\in I} cost_i^C \, C_i.
+\end{equation}
+
+% ------------------------------------------------------------
+\subsection{Soft Penalty for Excessive Corridor Edges}
+
+To encourage sparse, tree-like corridor networks while still allowing cycles:
+\begin{equation}
+Penalty_{\mathrm{edges}}
 \;=\;
-\sum_{j:(i,j)\in\mathrm{Adj}} g_{i,j,s} + Sink_{i,s},
-\label{eq:flow_cons_corr}
-\end{align}
-where \(Sink_{i,s}\) is the flow absorbed at cell \(i\) if \(i\) connects to the sink \(t_s\). For cells not connected to sink, \(Sink_{i,s}=0\); for sink-adjacent cells \(Sink_{i,s}\) equals the incoming flow absorbed.
+\gamma_{\mathrm{edge}}
+\sum_{s\in S} \sum_{(i,j)\in Adj} \lambda_{(i,j),s}.
+\end{equation}
 
-\paragraph{Link $conn_{s,k}$ to gateways.}
-\[
-conn_{s,k} \;\le\; Gateway_{s,k}, \qquad \forall s,k.
-\]
-This prevents claiming a patch is connected if it has no gateway.
-
-\paragraph{Interpretation / correctness.}
-If \(conn_{s,k}=1\), then one unit of flow must be injected at some gateway corridor cell of patch \(k\) and must reach the super-sink (root overlap) via activated edges \(\lambda_{(i,j),s}\). Hence \(conn_{s,k}=1\) certifies existence of a corridor path connecting patch \(k\) to the root.
-
-\subsection*{3.5 Corridor exclusivity for conflicting species (repeated)}
-
-\noindent For predator–prey or other conflict pairs \((s,s')\in P\) enforce that they cannot both use the same corridor cell:
-\begin{align}
-use_{i,s} + use_{i,s'} \;\le\; 1 \qquad \forall i\in I,\; (s,s')\in P.
-\label{eq:corridor_exclusive_repeat}
-\end{align}
-(If you prefer to allow corridor sharing but forbid simultaneous passage, adapt to time-sliced or capacity-based models — beyond current scope.)
-
-\subsection*{3.6 Corridor costs and stage-budget linking}
-
-\noindent Corridor cost accounting (repeat):
-\[
-Cost^{\text{corr}} \;=\; \sum_{i\in I} cost^{C}_{i} \; C_i.
-\]
-Include \(Cost^{\text{corr}}\) in stage budgets (Stage~2 main solve). When running Stage~3, fix \(C_i\) decided earlier or allow incremental \(C_i^{(3)}\) decision variables as needed.
-
-\subsection*{3.7 Soft tree-like penalty (recommended)}
-
-\noindent To favor tree-like corridor graphs without imposing NP-hard subtour elimination, penalize the total number of corridor edges used in the objective with a small weight \(\gamma_{\mathrm{edge}}\):
-\[
-\text{Penalty}_{\mathrm{edges}} \;=\; \gamma_{\mathrm{edge}} \sum_{s\in S} \sum_{(i,j)\in\mathrm{Adj}} \lambda_{(i,j),s}.
-\]
-This encourages sparser, near-tree corridor structures while leaving cycles permissible when they are beneficial.
-
-\subsection*{3.8 Special cases and numerical considerations}
-
-\begin{itemize}
-  \item If \(n_s \le 1\) (only 0 or 1 original patch), set \(conn_{s,k}=0\) and do not attempt corridor flow for that species.  
-  \item Choose \(U^{\text{corr}}\) as tight as possible (e.g. \(U^{\text{corr}} = |\{ \text{corridor cells} \}|\) upper bound) to tighten LP relaxations.  
-  \item If model size becomes large, consider solving corridor design on a reduced \emph{patch graph} (nodes = patches; arc weights = shortestpath costs), then map back to grid cells via shortest-path heuristics. This significantly reduces corridor-related variables and constraints.
-\end{itemize}
-
-% End of Corridor constraints block
+% End of Corridor Section
 
 % -------------------------
 % 4. Predator–prey / interaction constraints
