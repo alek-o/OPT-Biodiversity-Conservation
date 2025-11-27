@@ -48,6 +48,7 @@
           cannot overlap (e.g.\ $M$ with $E$ or $O$), otherwise $0$.
     \item $suit_{i,s} \in [0,1]$ : suitability score of cell $i$ for species $s$ (1 = ideal habitat, 0 = unsuitable).
     \item $priority_s \in \mathbb{R}_{+}$ : priority coefficient of species $s$ (higher means greater conservation priority).
+    \item $L_{\max} \in \mathbb{Z}_{+}$ : maximum allowed corridor length (in cells).
 \end{itemize}
 
 
@@ -90,6 +91,10 @@
 
     \item $use_{i,s}\in\{0,1\}$:
          species-level corridor-use; optional.
+
+    \item $dist_{i,s,k} \in \{0,1,\dots,L_{\max}\}
+\qquad\forall i\in I,\; s\in S,\; k\in K_s.$:
+          distance (in cells) from colony $k$ of species $s$ to cell $i$ via corridors.
 
 \end{itemize}
 
@@ -184,7 +189,7 @@ subject to Stage~1 feasibility constraints, e.g.:
 \[
 \begin{aligned}
 & \text{(a) Minimal area per species:} \\
-& R_{\min,s} \;\le\; \sum_{i\in I} area_i \, E_{i,s} \;\le\; R_{\min,s} + A_{\max}^{\text{cell}}
+& \sum_{i\in I} area_i \, E_{i,s} \;\le\; R_{\min,s} + A_{\max}^{\text{cell}}
       \quad \forall s \in S, \\[4pt]
 & \text{where \(A_{\max}^{\text{cell}} := \max_{i\in I} area_i\).}
 & \text{(b) Expansion feasibility (adjacency \& connectivity):} \\
@@ -738,15 +743,15 @@ propagating reachability through activated corridor edges.
 \subsection{Corridor Cell Usage}
 
 A species may use a corridor cell only if the corridor cell exists:
-\begin{equation}
+\begin{equation*}
 use_{i,s} \;\le\; C_i \qquad \forall i \in I,\; s \in S.
-\end{equation}
+\end{equation*}
 
 Optionally, require that species may use a corridor cell only if it overlaps their territory
 (unless explicitly allowed):
-\begin{equation}
+\begin{equation*}
 use_{i,s} \;\le\; T_{i,s} + Allow_{i,s}, \qquad Allow_{i,s} \in \{0,1\}.
-\end{equation}
+\end{equation*}
 
 % ------------------------------------------------------------
 \subsection{Corridor Edges}
@@ -789,9 +794,9 @@ where $U^{gw}$ is an upper bound on possible gateway cells (e.g.\ patch area).
 
 \paragraph{Initial reachability from a patch.}
 Any gateway cell of patch $k$ is initially reachable from patch $k$:
-\begin{equation}
+\begin{equation*}
 Reach_{i,s,k} \;\ge\; Overlap_{i,s,k} \qquad \forall i,s,k.
-\end{equation}
+\end{equation*}
 
 \paragraph{Propagation of reachability through corridor edges.}
 Reachability spreads from $i$ to $j$ only if the corridor edge $(i,j)$
@@ -846,6 +851,60 @@ Penalty_{\mathrm{edges}}
 \gamma_{\mathrm{edge}}
 \sum_{s\in S} \sum_{(i,j)\in Adj} \lambda_{(i,j),s}.
 \end{equation}
+
+\subsection{Gateways have distance 0 (if Overlap exists).}
+
+This forces any corridor cell that overlaps a patch k to be a root (distance 0) for propagation.
+\begin{equation*}
+dist_{i,s,k} \;\le\; L_{\max}\,(1 - Overlap_{i,s,k}) \;+\; 0
+\qquad\forall i,s,k. 
+\end{equation*}
+Explanation: when $Overlap_{i,s,k}=1$, $dist_{i,s,k} \le 0 \Rightarrow dist=0$.
+
+\subsection{Upper bound for all dist variables (redundant but explicit)}
+
+\begin{equation*}
+dist_{i,s,k} \;\le\; L_{\max}
+\qquad\forall i,s,k.
+\end{equation*}
+
+\subsection{Propagation constraint across an active corridor edge:}
+
+if edge $(i,j)$ is active for species $s$, then $dist_j <= dist_i + 1$.
+Use $Big-M = L_{max}$ to deactivate when edge not active.
+\begin{equation*}
+dist_{j,s,k} \;\le\; dist_{i,s,k} \;+\; 1 \;+\; L_{\max}\,(1 - \lambda_{(i,j),s})
+\qquad\forall (i,j)\in Adj,\; s\in S,\; k\in K_s.  
+\end{equation*}
+
+\subsection{Symmetric direction (ensure propagation both ways if needed):}
+
+\begin{equation*}
+dist_{i,s,k} \;\le\; dist_{j,s,k} \;+\; 1 \;+\; L_{\max} \cdot (1 - \lambda_{(i,j),s})
+\qquad\forall (i,j)\in Adj,\; s\in S,\; k\in K_s.
+\end{equation*}
+
+\subsection{Link reachability to distance:} 
+
+if cell \(i\) is reachable (\(Reach_{i,s,k}=1\)) from patch \(k\),
+its distance must be \(\le L_{\max}\). (The \texttt{dist} variable is already bounded by \(\,L_{\max}\,\), but this constraint ties Reach to dist.)
+\begin{equation*}
+dist_{i,s,k} \;\le\; L_{\max} \;-\; (1 - Reach_{i,s,k}) \cdot L_{\max}
+\qquad\forall i,s,k.
+\end{equation*}
+
+This constraint is equivalent to: $Reach_{i,s,k}=1 => dist_{i,s,k} <= L_{max}$.
+(When $Reach=0$ the $RHS = 0$, so it does not enforce anything active beyond nonnegativity;
+the dist variable's domain still applies.)
+
+\subsection{(Optional) force Reach to be consistent with finite distances:}
+
+if $dist <= L_{max}$ then Reach may be 1; otherwise Reach must be 0.
+We enforce the implication: $dist_{i,s,k} <= L_max * Reach_{i,s,k}$.
+\begin{equation*}
+dist_{i,s,k} \;\le\; L_{\max} \; Reach_{i,s,k}
+\qquad\forall i,s,k.
+\end{equation*}
 
 % End of Corridor Section
 
